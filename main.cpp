@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <cstdio>
 #include <string>
+#include <math.h>
 #include <opencv/cv.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/contrib/contrib.hpp>
@@ -34,81 +35,62 @@ double timeToWait;
 bool showPointsEnabled = true;
 
 void drawFacePoints (Mat& img, const Face face);
+float computeDistance (Point p1, Point p2);
+void populate(Mat& img, const Face face);
 
-
+float input[12][11];
+Point face_p[12];
 
 int main()
 {
-    CvCapture* capture;
     Mat img;
-    int deviceId = CV_CAP_ANY;
     //-- 1. Load the cascades
     if( !face_cascade.load( face_cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
-
-    VideoCapture cap(deviceId);
-
-    if(!cap.isOpened()) {
-        cerr << "Capture Device ID " << deviceId << "cannot be opened." << endl;
-        return -1;
-    }
 
 
     double nextTilt=0;
     Point nextRotCenter;
     double t;
 
-    capture = cvCaptureFromCAM( CV_CAP_ANY );
-    if( capture )
-    {
-        while( true )
-        {
-          img = cvQueryFrame( capture );
+    img = cv::imread("C:\\Users\\mcahi\\Pictures\\Camera Roll\\WIN_20160619_18_43_23_Pro.jpg", 1);
+//
+//    if( !img.empty() ) {
+    Mat draftImg;
+    img.copyTo(draftImg);
+           //Face detection and points extraction.
+    t = (double)cvGetTickCount(); //To count extraction time.
+    Face face (img, face_cascade, scale);
 
-          if( !img.empty() ) {
-            Mat draftImg;
-            img.copyTo(draftImg);
-
-            //Face detection and points extraction.
-            t = (double)cvGetTickCount(); //To count extraction time.
-            Face face (img, face_cascade, scale);
-
-
-            //If autorotation for tracking
-            if (nextTilt != 0 && rotationEnabled)
-            {
-                face.extractCharacteristicPoints(scale,nextTilt,nextRotCenter);
-            }
-            else
-                face.extractCharacteristicPoints();
-
-            t = (double)cvGetTickCount() - t;
-            extractionTime = t/((double)cvGetTickFrequency()*1000.0); //in ms
-
-            //Only for autorotation
-            if (rotationEnabled)
-            {
-                if (face.faceFound)
-                {
-                    nextTilt = -(face.tilt);
-                    nextRotCenter = face.cleye; //We center rotation on left eye.
-                }else
-                    nextTilt = 0;
-            }
-
-            if (showPointsEnabled)
-                drawFacePoints (draftImg, face);
-
-            cv::imshow( "Captured from Cam", draftImg );
-            cv::imshow("Preprocessed Image", face.processedImg);
-          }
-
-          else
-            { printf(" --(!) No captured frame -- Break!"); }
-
-          int c = waitKey(10);
-          if( (char)c == 'c' ) { break; }
-        }
+    //If autorotation for tracking
+    if (nextTilt != 0 && rotationEnabled) {
+        face.extractCharacteristicPoints(scale,nextTilt,nextRotCenter);
     }
+    else
+        face.extractCharacteristicPoints();
+
+    t = (double)cvGetTickCount() - t;
+    extractionTime = t/((double)cvGetTickFrequency()*1000.0); //in ms
+
+    //Only for autorotation
+    if (rotationEnabled)
+    {
+       if (face.faceFound)
+       {
+          nextTilt = -(face.tilt);
+          nextRotCenter = face.cleye; //We center rotation on left eye.
+       } else
+          nextTilt = 0;
+    }
+
+    if (showPointsEnabled)
+       drawFacePoints (draftImg, face);
+
+    populate(draftImg, face);
+
+    imshow( "Captured from Cam", draftImg );
+    imshow("Preprocessed Image", face.processedImg);
+    waitKey(0);
+
     return 0;
 }
 
@@ -119,11 +101,9 @@ void drawFacePoints (Mat& img, const Face face)
     //Lips
     Face::rescaledCircle(img,face.llip, 1, scale, CV_RGB(255,170,120),-1,CV_AA);
     Face::rescaledCircle(img,face.rlip, 1, scale, CV_RGB(255,170,120),-1,CV_AA);
-    Face::rescaledCircle(img,face.ulip, 1, scale, CV_RGB(255,170,120),-1,CV_AA);
-    Face::rescaledCircle(img,face.dlip, 1, scale, CV_RGB(255,170,120),-1,CV_AA);
 
     //Eyebrows
-    for (int i = 0; i< 4; i++)
+    for (int i = 0; i <= 1; i++)
     {
         //Left
         Face::rescaledCircle(img,face.leb[i], 1, scale,CV_RGB(255,0,0),-1,CV_AA);
@@ -134,66 +114,15 @@ void drawFacePoints (Mat& img, const Face face)
 
 
     //Eyes
-    //Center Points
-    Face::rescaledCircle(img,face.creye, 1, scale,CV_RGB(255,255,255),-1,CV_AA);
-    Face::rescaledCircle(img,face.cleye, 1, scale,CV_RGB(255,255,255),-1,CV_AA);
-
+    //All points
+    for (int i = 0; i <= 1; i++) {
+        Face::rescaledCircle(img, face.lefcps[i], 1, scale, CV_RGB(255,255,255), -1,CV_AA);
+        Face::rescaledCircle(img, face.refcps[i], 1, scale, CV_RGB(255,255,255), -1,CV_AA);
+    }
 
     //Nosestrills
     Face::rescaledCircle(img,face.lnstrl, 1, scale, CV_RGB(0,255,0),-1,CV_AA);
     Face::rescaledCircle(img,face.rnstrl, 1, scale, CV_RGB(0,255,0),-1,CV_AA);
-
-
-
-    //Tilt Angle
-    // Drawing tilted lines on face limits
-    Point uline1, uline2, dline1, dline2, lline1, lline2, rline1, rline2;
-    Point puline1, puline2;
-    Point p1,p2;
-
-    Rect fr; //Face frame
-    Face::transformPoint(face.location, p1, face.rMat);
-    fr.x = p1.x;
-    fr.y = p1.y;
-    fr.width = face.size.width;
-    fr.height = face.size.height;
-
-
-    lline1.x = fr.x;
-    lline2.x = lline1.x - 10;
-    rline1.x = fr.x + fr.width - 1;
-    rline2.x = rline1.x + 10;
-    lline1.y = lline2.y = rline1.y = rline2.y = fr.y + std::max(0, (fr.height/2) - 1);
-
-    uline1.x = uline2.x =  dline1.x = dline2.x = fr.x + std::max(0, (fr.width/2) - 1);
-    uline1.y =  fr. y;
-    uline2.y = uline1.y - 10;
-    dline1.y =  fr. y + fr.height -1;
-    dline2.y = dline1.y + 10;
-
-    puline1 = uline1;
-    puline2 = uline2;
-
-
-    Face::transformPoint(uline1 , uline1, face.irMat);
-    Face::transformPoint(uline2 , uline2, face.irMat);
-    Face::transformPoint(dline1 , dline1, face.irMat);
-    Face::transformPoint(dline2 , dline2, face.irMat);
-    Face::transformPoint(lline1 , lline1, face.irMat);
-    Face::transformPoint(lline2 , lline2, face.irMat);
-    Face::transformPoint(rline1 , rline1, face.irMat);
-    Face::transformPoint(rline2 , rline2, face.irMat);
-
-
-
-    //Scaling to big img
-    Face::rescaledLine(img, puline1, puline2, scale, CV_RGB(255,255, 255), 3, CV_AA);
-    //Face::rescaledLine(img2, rotCenter, puline1, scale, CV_RGB(255,255, 255), 1, CV_AA);
-    //Face::rescaledLine(img2, rotCenter, uline1, scale, CV_RGB(255,255, 255), 1, CV_AA);
-    Face::rescaledLine(img, uline1, uline2, scale, CV_RGB(255,170,120), 3, CV_AA);
-    Face::rescaledLine(img, dline1, dline2, scale, CV_RGB(255,170,120), 3, CV_AA);
-    Face::rescaledLine(img, lline1, lline2, scale, CV_RGB(255,170,120), 3, CV_AA);
-    Face::rescaledLine(img, rline1, rline2, scale, CV_RGB(255,170,120), 3, CV_AA);
 
 
     // Some Textual Info
@@ -208,4 +137,38 @@ void drawFacePoints (Mat& img, const Face face)
     ss.str("");
     ss << "Auto-rotation: " << (rotationEnabled? "ON": "OFF");
     putText(img, ss.str(), Point (0,45), FONT_HERSHEY_PLAIN, 1, CV_RGB(255,255, 255), 1,CV_AA, false);
+}
+
+float computeDistance(Point p1, Point p2)
+{
+    Point diff = p1 - p2;
+    float ans = cv::sqrt(diff.x*diff.x + diff.y*diff.y);
+
+    return ans;
+}
+
+void populate(Mat& img, const Face face)
+{
+    double scale = face.scale;
+    face_p[0] = face.rlip; face_p[1] = face.llip; face_p[2] = face.leb[0]; face_p[3] = face.leb[1];
+    face_p[4] = face.reb[0]; face_p[5] = face.reb[1]; face_p[6] = face.lefcps[0]; face_p[7] = face.lefcps[1];
+    face_p[8] = face.refcps[0]; face_p[9] = face.refcps[1]; face_p[10] = face.lnstrl; face_p[11] = face.rnstrl;
+
+    for (int i = 0; i < sizeof input/sizeof input[0]; i++) {
+        for (int j = 0; j < i; j++) {
+            input[i][j] = computeDistance(face_p[i], face_p[j]);
+            Face::rescaledLine(img, face_p[i], face_p[j], scale, CV_RGB(0,0,255),1,CV_AA);
+        }
+        for (int k = i; k < sizeof face_p/sizeof *face_p; k++) {
+            input[i][k] = computeDistance(face_p[i], face_p[k + 1]);
+            //Face::rescaledLine(img, face_p[i], face_p[k + 1], scale, CV_RGB(0,0,255),1,CV_AA);
+        }
+    }
+
+    for (int i = 0; i < sizeof input/sizeof input[0]; i++) {
+        for (int j = 0; j < sizeof input[0]/sizeof(int); j++) {
+            cout << input[i][j]; cout << ", "; }
+        cout << " " << endl;
+        cout << " " << endl;
+    }
 }

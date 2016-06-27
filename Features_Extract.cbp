@@ -251,6 +251,8 @@
 			<Add library="../../../../../opencv/build/x86/mingw/lib/libopencv_videostab2413.dll.a" />
 			<Add directory="../../../../../opencv/build/x86/mingw/lib" />
 		</Linker>
+		<Unit filename="face.cpp" />
+		<Unit filename="face.h" />
 		<Unit filename="main.cpp" />
 		<Extensions>
 			<code_completion />
