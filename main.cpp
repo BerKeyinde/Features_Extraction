@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <string>
 #include <math.h>
+#include <fstream>
+#include <sstream>
+
 #include <opencv/cv.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/contrib/contrib.hpp>
@@ -31,15 +34,17 @@ double scale = 3;
 
 double timeToWait;
 
-
+Mat image;
 bool showPointsEnabled = true;
 
 void drawFacePoints (Mat& img, const Face face);
 float computeDistance (Point p1, Point p2);
-void populate(Mat& img, const Face face);
+void populate(Mat& img, const Face face, string label);
 
 float input[12][11];
 Point face_p[12];
+
+String inputName = "C:\\Users\\mcahi\\Downloads\\Compressed\\faces94\\faces94\\set.txt";
 
 int main()
 {
@@ -47,52 +52,91 @@ int main()
     //-- 1. Load the cascades
     if( !face_cascade.load( face_cascade_name ) ){ printf("--(!)Error loading\n"); return -1; };
 
+    if ( inputName.empty()) {
+        cerr << "ERROR: Could not load image or image database.\n"
+                "It should be a text file containing the list of the image filenames to be processed - one per line"
+        << endl;
+        return -1;
+    }
+    std::ifstream file(inputName.c_str(), ifstream::in);
+
+            /* assume it is a text file containing the
+            list of the image filenames to be processed - one per line */
+
+    if( !file )
+    {
+        cerr << "ERROR: Could not open file \"" << inputName.c_str() << "\"."<< endl;
+        cerr << "Usage: faceImitator [--cascade=\"<cascade_path>\"]\n"
+                "   [--scale=<image scale>]\n"
+                "   [filename|camera_index]\n" ;
+
+        return -1;
+    }
+
 
     double nextTilt=0;
     Point nextRotCenter;
     double t;
+    string line, path, classlabel;
+    char separator = ';';
 
-    img = cv::imread("C:\\Users\\mcahi\\Pictures\\Camera Roll\\WIN_20160619_18_43_23_Pro.jpg", 1);
-//
-//    if( !img.empty() ) {
-    Mat draftImg;
-    img.copyTo(draftImg);
-           //Face detection and points extraction.
-    t = (double)cvGetTickCount(); //To count extraction time.
-    Face face (img, face_cascade, scale);
+    while ( getline(file, line) ) {
+            stringstream liness(line);
+            getline(liness, path, separator);
+            getline(liness, classlabel);
 
-    //If autorotation for tracking
-    if (nextTilt != 0 && rotationEnabled) {
-        face.extractCharacteristicPoints(scale,nextTilt,nextRotCenter);
+            if ( !path.empty() && !classlabel.empty() )
+                img = imread( path, 1 );
+
+            Mat draftImg;
+            img.copyTo(draftImg);
+                   //Face detection and points extraction.
+            t = (double)cvGetTickCount(); //To count extraction time.
+            Face face (img, face_cascade, scale);
+
+            //If autorotation for tracking
+            if (nextTilt != 0 && rotationEnabled) {
+                face.extractCharacteristicPoints(scale,nextTilt,nextRotCenter);
+            }
+            else
+                face.extractCharacteristicPoints();
+
+            t = (double)cvGetTickCount() - t;
+            extractionTime = t/((double)cvGetTickFrequency()*1000.0); //in ms
+
+            //Only for autorotation
+            if (rotationEnabled)
+            {
+               if (face.faceFound)
+               {
+                  nextTilt = -(face.tilt);
+                  nextRotCenter = face.cleye; //We center rotation on left eye.
+               } else
+                  nextTilt = 0;
+            }
+
+            if (showPointsEnabled)
+               drawFacePoints (draftImg, face);
+
+            populate(draftImg, face, classlabel);
+
+            imshow( "Captured from Cam", draftImg );
+            imshow("Preprocessed Image", face.processedImg);
+//            waitKey(0);
+
+            int c = waitKey(10);
+            if( (char)c == 'c' ) { break; }
+
     }
-    else
-        face.extractCharacteristicPoints();
 
-    t = (double)cvGetTickCount() - t;
-    extractionTime = t/((double)cvGetTickFrequency()*1000.0); //in ms
 
-    //Only for autorotation
-    if (rotationEnabled)
-    {
-       if (face.faceFound)
-       {
-          nextTilt = -(face.tilt);
-          nextRotCenter = face.cleye; //We center rotation on left eye.
-       } else
-          nextTilt = 0;
-    }
+//    cvDestroyWindow( "Captured from Cam");
+//    cvDestroyWindow( "Preprocessed Image");
 
-    if (showPointsEnabled)
-       drawFacePoints (draftImg, face);
-
-    populate(draftImg, face);
-
-    imshow( "Captured from Cam", draftImg );
-    imshow("Preprocessed Image", face.processedImg);
-    waitKey(0);
 
     return 0;
 }
+
 
 void drawFacePoints (Mat& img, const Face face)
 {
@@ -147,7 +191,7 @@ float computeDistance(Point p1, Point p2)
     return ans;
 }
 
-void populate(Mat& img, const Face face)
+void populate(Mat& img, const Face face, string label)
 {
     double scale = face.scale;
     face_p[0] = face.rlip; face_p[1] = face.llip; face_p[2] = face.leb[0]; face_p[3] = face.leb[1];
@@ -157,7 +201,7 @@ void populate(Mat& img, const Face face)
     for (int i = 0; i < sizeof input/sizeof input[0]; i++) {
         for (int j = 0; j < i; j++) {
             input[i][j] = computeDistance(face_p[i], face_p[j]);
-            Face::rescaledLine(img, face_p[i], face_p[j], scale, CV_RGB(0,0,255),1,CV_AA);
+            //Face::rescaledLine(img, face_p[i], face_p[j], scale, CV_RGB(0,0,255),1,CV_AA);
         }
         for (int k = i; k < sizeof face_p/sizeof *face_p; k++) {
             input[i][k] = computeDistance(face_p[i], face_p[k + 1]);
@@ -168,6 +212,7 @@ void populate(Mat& img, const Face face)
     for (int i = 0; i < sizeof input/sizeof input[0]; i++) {
         for (int j = 0; j < sizeof input[0]/sizeof(int); j++) {
             cout << input[i][j]; cout << ", "; }
+        cout << label;
         cout << " " << endl;
         cout << " " << endl;
     }
